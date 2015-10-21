@@ -83,19 +83,11 @@ class Notif_manager {
             
             // update des messages à la volée quand on a une action de similitude (A AUSSI)
             
-            /*if($notif->getAuthor() != $me && 
+            if($notif->getAuthor() != $me && 
                     $notif->getTarget_user() != $me && 
                     in_array($notif->getType(), $like_me_action_list) &&
                     is_null($notif->getTarget_group()) &&
                     is_null($notif->getTarget_event())){
-                
-                $n['note'] = $this->build_notif_note_like_me($notif);
-                $n['note'] = str_replace(ci()->config->item('motospot_url_slug'), base_url(), $n['note']);
-            }*/
-            
-            if($notif->getAuthor() != $me && 
-                    $notif->getTarget_user() != $me && 
-                    in_array($notif->getType(), $like_me_action_list)){
                 
                 $n['note'] = $this->build_notif_note_like_me($notif);
                 $n['note'] = str_replace(ci()->config->item('motospot_url_slug'), base_url(), $n['note']);
@@ -501,9 +493,8 @@ class Notif_manager {
         // target
         
         $tauthor    = $notif->getTarget_user();
-        $final      = '';
            
-        /*if(is_null($notif->getTarget_post())){
+        if(is_null($notif->getTarget_post())){
             $entity     = $notif->getTarget_comment();
             $target     = '<strong>le commentaire</strong>';
             $link       = $entity->getPost()->get_publication_url(true); 
@@ -511,36 +502,11 @@ class Notif_manager {
             $entity     = $notif->getTarget_post();
             $target     = $this->get_accuracy_target($entity);
             $link       = $entity->get_publication_url(true);
-        }*/
-        
-        if(!is_null($notif->getTarget_comment())){
-            
-            $entity     = $notif->getTarget_comment();
-            $target     = '<strong>le commentaire</strong>';
-            $target    .= ' de <strong>'.ucfirst($tauthor->getPseudonym()).'</strong> ';
-            $link       = $entity->getPost()->get_publication_url(true); 
-            $final      = $this->get_text_resume($entity->getText());
-            
-        }else if(!is_null($notif->getTarget_group())){
-            
-            $entity     = $notif->getTarget_group();
-            $target     = '<strong>le groupe "'.$entity->getPseudonym().'"</strong>';
-            $link       = $entity->get_profil_url(true); 
-            
-        }else if(!is_null($notif->getTarget_event())){
-            
-            $entity     = $notif->getTarget_event();
-            $target     = '<strong>l\'évènement "'.$entity->getName().'"</strong>';
-            $link       = $entity->get_profil_url(true);
-            
-        }else{
-            $entity     = $notif->getTarget_post();
-            $target     = $this->get_accuracy_target($entity);
-            $target    .= ' de <strong>'.ucfirst($tauthor->getPseudonym()).'</strong> ';
-            $link       = $entity->get_publication_url(true);
-            $final      = $this->get_text_resume($entity->getText());
         }
 
+        $final      = $this->get_text_resume($entity->getText());
+        $target    .= ' de <strong>'.ucfirst($tauthor->getPseudonym()).'</strong> ';
+        
         return '<a class="notif_link_visited" data-id="'.$notif->getId().'" href="'.$link.'">'.$author.$action.$target.$final.'</a>';
     }
     

@@ -5,12 +5,11 @@ use Entity\Entity;
 /**
  * Query notification : Model des notifications
  * Permet de faire des requêtes sur la table notification
- * v1.2 : filtrage des notifications antérieurs à l'action de l'utilisateur
  *
  * Utilisé sur la page notification et par l'API notification
  * @package Notification
  * @category Modèle (/models)
- * @version 1.2
+ * 
  */
 class Query_notification extends CI_Model
 {
@@ -18,13 +17,11 @@ class Query_notification extends CI_Model
      * @var integer Nombre de notification autorisé par page 
      */
     private $by_page;
-    private $prefetch_quantity;
     
     function __construct() {
         
         parent::__construct();       
-        $this->by_page              = $this->config->item('notification_nb_by_page');       
-        $this->prefetch_quantity    = $this->by_page * 3;
+        $this->by_page = $this->config->item('notification_nb_by_page');
     }
     
     
@@ -36,7 +33,7 @@ class Query_notification extends CI_Model
                 ->select('n')
                 ->where($qb->expr()->eq('n.type', ':type'))
                 ->andWhere($qb->expr()->eq('n.'.$target_name, ':target_id'))
-                ->orderBy('n.create_at', 'DESC')
+                ->orderBy('n.id', 'DESC')
                 ->setParameter('type', $type_id)
                 ->setParameter('target_id', $target_id)
                 ->setMaxResults($nb_by_page)
@@ -71,7 +68,7 @@ class Query_notification extends CI_Model
                 ->andWhere('n.type = ?2')
                 /*->andWhere('n.target_group = ?3')
                 ->andWhere('n.target_event = ?3')*/
-                ->orderBy('n.create_at', 'DESC')
+                ->orderBy('n.id', 'DESC')
                 ->setParameter(1,$user)
                 ->setParameter(2, \Entity\Notification::LIKE)
                 //->setParameter(3, null)
@@ -86,25 +83,47 @@ class Query_notification extends CI_Model
     }
     
      private function get_base_query($user){
- 
-        // --- REQUETE B
-         
-         
-        $qb                 = $this->doctrine->em->createQueryBuilder();       
+        
+        $qb                 = $this->doctrine->em->createQueryBuilder();
+        $my_like_post_qb    = $this->doctrine->em->createQueryBuilder();
+        $my_share_post_qb   = $this->doctrine->em->createQueryBuilder();
+        $my_comment_post_qb = $this->doctrine->em->createQueryBuilder();
+        
         $my_event_admin_qb  = $this->doctrine->em->createQueryBuilder();
-        $my_event_member_qb = $this->doctrine->em->createQueryBuilder();
+        $my_event_member_qb = $this->doctrine->em->createQueryBuilder();    
+        
 
-        $my_like_post_qb    = $this->doctrine->em->createQuery("SELECT p FROM Entity\Post p JOIN p.notifications c WITH c.author = :user AND  c.type = :action_like");
-        $my_like_comment_qb = $this->doctrine->em->createQuery("SELECT p1 FROM Entity\Comment p1 JOIN p1.notifications c1 WITH c1.author = :user AND  c1.type = :action_like");
-        $my_like_group_qb   = $this->doctrine->em->createQuery("SELECT p4 FROM Entity\User p4 JOIN p4.group_notifications c4 WITH c4.author = :user AND  c4.type = :action_like");
-        $my_like_event_qb   = $this->doctrine->em->createQuery("SELECT p5 FROM Entity\Event p5 JOIN p5.notifications c5 WITH c5.author = :user AND  c5.type = :action_like");        
+        // les publications sur lesquels l'utilisateur a liké
+
+        $my_like_post_qb->select('p')
+        ->from('Entity\Post', 'p')
+        ->join('p.notifications', 'c', 'WITH', $qb->expr()->andX(
+                $qb->expr()->eq('c.author', ':user'),
+                $qb->expr()->eq('c.type', ':action_like')
+                )
+              );
         
-        $my_share_post_qb   = $this->doctrine->em->createQuery("SELECT p2 FROM Entity\Post p2 JOIN p2.notifications c2 WITH c2.author = :user AND  c2.type = :action_share");
-        $my_share_event_qb  = $this->doctrine->em->createQuery("SELECT p6 FROM Entity\Event p6 JOIN p6.notifications c6 WITH c6.author = :user AND  c6.type = :action_share");
-        $my_share_group_qb  = $this->doctrine->em->createQuery("SELECT p7 FROM Entity\User p7 JOIN p7.group_notifications c7 WITH c7.author = :user AND  c7.type = :action_share");
+        
+        // les publications sur lesquels l'utilisateur a partagé
+        
+        $my_share_post_qb->select('p2')
+        ->from('Entity\Post', 'p2')
+        ->join('p2.notifications', 'c2', 'WITH', $qb->expr()->andX(
+                $qb->expr()->eq('c2.author', ':user'),
+                $qb->expr()->eq('c2.type', ':action_share')
+                )
+              );
         
         
-        $my_comment_post_qb = $this->doctrine->em->createQuery("SELECT p3 FROM Entity\Post p3 JOIN p3.notifications c3 WITH c3.author = :user AND  c3.type = :action_comment");
+        // les publications sur lesquels l'utilisateur a commenté
+        
+       $my_comment_post_qb->select('p3')
+        ->from('Entity\Post', 'p3')
+        ->join('p3.notifications', 'c3', 'WITH', $qb->expr()->andX(
+                $qb->expr()->eq('c3.author', ':user'),
+                $qb->expr()->eq('c3.type', ':action_comment')
+                )
+              );
 
        // les évènements que l'utilisateur administre
 
@@ -145,20 +164,15 @@ class Query_notification extends CI_Model
                         $qb->expr()->eq('n.target_user', ':user'),
                         $qb->expr()->neq('n.author', ':user')
                     ))
-    // re-liké post, comment, group, event
+    // re-liké
             ->orWhere($qb->expr()->andX(
-                        $qb->expr()->orX($qb->expr()->in('n.target_post', $my_like_post_qb->getDQL()),
-                                        $qb->expr()->in('n.target_comment', $my_like_comment_qb->getDQL()),
-                                        $qb->expr()->in('n.target_group', $my_like_group_qb->getDQL()),
-                                        $qb->expr()->in('n.target_event', $my_like_event_qb->getDQL())),                        
+                        $qb->expr()->in('n.target_post', $my_like_post_qb->getDQL()),
                         $qb->expr()->eq('n.type', ':action_like'),
                         $qb->expr()->neq('n.author', ':user')
                     ))
-    // re-sharé post, group, event
+    // re-sharé
             ->orWhere($qb->expr()->andX(
-                        $qb->expr()->orX($qb->expr()->in('n.target_post', $my_share_post_qb->getDQL()),
-                                $qb->expr()->in('n.target_group', $my_share_group_qb->getDQL()),
-                                $qb->expr()->in('n.target_event', $my_share_event_qb->getDQL())),
+                        $qb->expr()->in('n.target_post', $my_share_post_qb->getDQL()),
                         $qb->expr()->eq('n.type', ':action_share'),
                         $qb->expr()->neq('n.author', ':user')
                     ))
@@ -186,19 +200,13 @@ class Query_notification extends CI_Model
                         ),
                         $qb->expr()->neq('n.author', ':user')    
                     ))
-                
+                    
     // messages privés
             ->orWhere($qb->expr()->andX(
                         $qb->expr()->eq('n.target_user', ':user'),
                         $qb->expr()->eq('n.type', ':action_message'),
                         $qb->expr()->neq('n.author', ':user')
                     ));
-                
-    /* dates de souscriptions                
-            ->orWhere($qb->expr()->andX(
-                        $qb->expr()->eq('n.author', ':user'),
-                        $qb->expr()->in('n.type', ':action_subscribe')
-                    ));*/
         
     // pour les membres de groupe
         if(!$user->is_a_group()){
@@ -235,70 +243,9 @@ class Query_notification extends CI_Model
             ->setParameter('user_id', $user->getId())
             ->setParameter('answer_yes', \Entity\EventJoin::ANSWER_YES)
             ->setParameter('answer_maybe', \Entity\EventJoin::ANSWER_MAYBE)
-            /*->setParameter('action_subscribe', array(\Entity\Notification::EVENT_PARTICIPATE,
-                                                     \Entity\Notification::GROUP_SUBSCRIBE))*/
-            ->orderBy('n.create_at', 'DESC');
+            ->orderBy('n.id', 'DESC');
         
         return $qb;
-    }
-    
-    /**
-     * Récupére les timings de l'utilisateur en cours :
-     * - like, share, comment (LSC)
-     * - inscription groupe, évènement, amitié (GEA)
-     * Par défaut les LSC sont pris en compte sur les 2 derniers mois.
-     * @param \Entity\User $user
-     * @param Boolean $get_all_time_data Prise en compte des LSC sur 4 mois.
-     * @return Array(Assoc)
-     */
-    public function get_base_user_timing($user, $get_all_time_data = false){
-
-        $monitored = array( \Entity\Notification::GROUP_SUBSCRIBE,
-                            \Entity\Notification::EVENT_PARTICIPATE,
-                            \Entity\Notification::FRIEND_ACCEPT);
-        
-        // les like, share et comment sont monitorés sur une période de 2 mois
-        
-        $monitored_timed = array( \Entity\Notification::COMMENT,
-                            \Entity\Notification::LIKE,
-                            \Entity\Notification::SHARE);
-
-        // Requête
-        
-        $nb_month = ($get_all_time_data) ? 4 : 2;
-        $to     = new \DateTime('now', new \DateTimeZone('Europe/Paris'));
-        $from   = new \DateTime('now', new \DateTimeZone('Europe/Paris'));
-        $from->sub(new \DateInterval("P".$nb_month."M"));
-        
-        $qba = $this->doctrine->em->createQueryBuilder();
-        $qba->select('n')
-           ->from('Entity\Notification', 'n')
-           ->where($qba->expr()->andX(
-                    $qba->expr()->eq('n.author', ':user'),
-                    $qba->expr()->in('n.type', ':monitored')
-            ))
-           ->orWhere($qba->expr()->andX(
-                    $qba->expr()->eq('n.author', ':user'),
-                    $qba->expr()->in('n.type', ':monitored_timed'),
-                    $qba->expr()->between('n.create_at', ':from',':to')
-            ))
-            ->setParameter('from', $from)
-            ->setParameter('to', $to)
-            ->setParameter('user', $user)
-            ->setParameter('monitored', $monitored)
-            ->setParameter('monitored_timed', $monitored_timed);
-
-        $query  = $qba->getQuery(); 
-        $result = $query->getResult();
-
-        $dates = array();
-
-        foreach($result as $n){
-            $h = $this->get_identity_hash($n);
-            if(!isset($dates[$h]))    $dates[$h] = $n->getId();
-        }
-        
-        return $dates;
     }
     
     /**
@@ -308,19 +255,12 @@ class Query_notification extends CI_Model
      */
     public function get_last_notification($user){
 
-        $dates  = $this->get_base_user_timing($user);
-        
-        $qb     = $this->get_base_query($user);       
+        $qb = $this->get_base_query($user);       
         $qb->select('n')
-           ->setMaxResults($this->prefetch_quantity);
+           ->setMaxResults($this->by_page);
 
-        $query  = $qb->getQuery(); 
-        $result = $query->getResult();
-        
-        // exit('<pre>'.$qb->getDQL().'</pre>');
-        
-        //return $result;
-        return $this->remove_outdated_data($result, $dates, $user);
+        $query = $qb->getQuery();      
+        return $query->getResult();
     }
 
     /**
@@ -330,8 +270,6 @@ class Query_notification extends CI_Model
      */
     public function get_last_unread_notification($user){
 
-        $dates = $this->get_base_user_timing($user, true);
-        
         $qb = $this->get_base_query($user);
         
         $qb->select('n')
@@ -339,9 +277,7 @@ class Query_notification extends CI_Model
            ->setParameter('last_access', $user->getLast_notification_access());
         
         $query = $qb->getQuery();      
-        $result = $query->getResult();
-
-        return $this->remove_outdated_data($result, $dates, $user);
+        return $query->getResult();
     }
     
     /**
@@ -353,12 +289,10 @@ class Query_notification extends CI_Model
      */
     public function get_last_already_read_notification($user, $last_id=0, $lt = true){
 
-        $dates  = $this->get_base_user_timing($user);
-        
         $qb = $this->get_base_query($user);
 
         $qb->select('n')
-           ->setMaxResults($this->prefetch_quantity);
+           ->setMaxResults($this->by_page);
             // $user->getLast_notification_access()
         
         if($last_id>0){
@@ -378,9 +312,7 @@ class Query_notification extends CI_Model
         
         //die($query->getSQL());
         
-        $result = $query->getResult();
-
-        return $this->remove_outdated_data($result, $dates, $user);
+        return $query->getResult();
     }
     
     /**
@@ -391,8 +323,7 @@ class Query_notification extends CI_Model
      */
     public function get_last_notification_by_week($user){
 
-        $dates  = $this->get_base_user_timing($user);
-        $qb     = $this->get_base_query($user);
+        $qb = $this->get_base_query($user);
         
         // weekly
         
@@ -411,9 +342,7 @@ class Query_notification extends CI_Model
            ->setParameter('to', $now);
         
         $query = $qb->getQuery();
-        $result = $query->getResult();
-
-        return $this->remove_outdated_data($result, $dates, $user);
+        return $query->getResult();
     }
     
     /**
@@ -443,166 +372,5 @@ class Query_notification extends CI_Model
         
         $query = $qb->getQuery();
         return $query->getScalarResult()[0][1];
-    }
-    
-    
-    
-    // ---------------- POST PROCESS : REMOVE OUTDATED NOTIF -------------------
-    
-    
-    /**
-     * Filtre les notifications antérieurs à l'action de l'utilisateur
-     * @param \Doctrine\Common\Collections\ArrayCollection $collection
-     * @param \Entity\User $user
-     * @return \Doctrine\Common\Collections\ArrayCollection
-     */
-    private function remove_outdated_data($collection, $dates, $user){
-        
-        //$dates  = array();
-        $result = new \Doctrine\Common\Collections\ArrayCollection();
-
-        $dp     = array();
-        $total  = array();
-        $max    = $this->by_page;
-        
-        // --- Construction de la nouvelle liste expurgée des notifs anciennes
-        
-        foreach ($collection as $notif){
-        
-            $hash               = $this->get_identity_hash($notif);
-            $id                 = $notif->getId().'.';
-            $type               = $notif->getType();
-            $total[$id.$hash]   = $notif->getId(); 
-            $outdated           = false;
-            
-            switch($type){
-                
-                case \Entity\Notification::COMMENT:
-                case \Entity\Notification::LIKE:
-                case \Entity\Notification::SHARE:
-                    
-                    if(isset($dates[$hash]) && $notif->getId()<$dates[$hash])   $outdated = true;
-                    break;
-                
-                case \Entity\Notification::PUBLISH_ON_EVENT:
-                    
-                    if(!is_null($notif->getTarget_event())){
-                        $hg = '5.E'.$notif->getTarget_event()->getId();
-                        if(isset($dates[$hg]) && $notif->getId()<$dates[$hg])   $outdated = true;
-                    }
-                    break;
-                
-                case \Entity\Notification::PUBLISH_ON_WALL:
-                    if(!is_null($notif->getTarget_user())){                
-                        $hg = ($notif->getTarget_user()->is_a_group()) ? '6.G' : '20.U';
-                        $hg .= $notif->getTarget_user()->getId();
-                        if(isset($dates[$hg]) && $notif->getId()<$dates[$hg])   $outdated = true;
-                    }
-                    break;
-            }
-
-            if(!$outdated){
-                $result->add($notif);
-                $dp[$id.$hash] = $notif->getId(); 
-            }
-            
-            // limit la quantité des notif
-            
-            if(count($result)>=$max) break;
-        }
-        
-//        echo 'DATES';
-//        echo '<pre>'.print_r($dates, true).'</pre>';
-//        echo 'TOTAL';
-//        echo '<pre>'.print_r($total, true).'</pre>';
-//        echo 'RESULT';
-//        echo '<pre>'.print_r($dp, true).'</pre>';
-//        echo count($result);
-        
-        return $result;
-    }
-    
-    /**
-     * 
-     * @param Entity\Notification $notif
-     * @return String
-     */
-    private function get_identity_hash($notif){
-        
-        // target
-            
-        $target = '';
-
-        if(!is_null($notif->getTarget_post())){
-            $target = 'P'.$notif->getTarget_post()->getId();
-        }else if(!is_null($notif->getTarget_comment())){
-            $target = 'C'.$notif->getTarget_comment()->getId();
-        }else if(!is_null($notif->getTarget_group())){
-            $target = 'G'.$notif->getTarget_group()->getId();
-        }else if(!is_null($notif->getTarget_event())){
-            $target = 'E'.$notif->getTarget_event()->getId();
-        }else if(!is_null($notif->getTarget_message())){
-            $target = 'M'.$notif->getTarget_message()->getId();
-        }else if(!is_null($notif->getTarget_user())){
-            $target = 'U'.$notif->getTarget_user()->getId();
-        }
-
-        // type
-        $type = $notif->getType();
-        return $type.'.'.$target; 
-    }
-    
-    /**
-     * Filtre les notifications antérieurs à l'action de l'utilisateur
-     * @param \Doctrine\Common\Collections\ArrayCollection $collection
-     * @param \Entity\User $user
-     * @return \Doctrine\Common\Collections\ArrayCollection
-     */
-    private function remove_outdated_data_OLD($collection, $user){
-        
-        // --- Détermine les dates d'action de l'utilisateur en cours
-        
-        $dates  = array();
-        $result = new \Doctrine\Common\Collections\ArrayCollection();
-        
-        $start = array();
-        
-        foreach ($collection as $notif){
-            
-            $hash   = $this->get_identity_hash($notif);
-            $id     = $notif->getId();
-            
-            $start[$notif->getAuthor()->getId().'.'.$hash] = $id;
-            
-            if($notif->getAuthor()->getId() != $user->getId())    continue;
-
-            $dates[$hash] = $id;             
-        }
-        
-        print_r($start);
-        
-        print_r($dates);
-        $dp = array();
-        
-        // --- Construction de la nouvelle liste expurgée des notifs anciennes
-        
-        foreach ($collection as $notif){
-        
-            // user notif
-            if($notif->getAuthor()->getId() == $user->getId())    continue;           
-            
-            $hash = $this->get_identity_hash($notif);
-            
-            if(isset($dates[$hash])){
-                if($notif->getId()>$dates[$hash]){
-                    $result->add($notif);
-                    $dp[$hash] = $notif->getId();   
-                }
-            }
-        }
-        
-        print_r($dp);
-        
-        return $result;
     }
 }
